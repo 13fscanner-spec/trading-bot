@@ -1294,23 +1294,30 @@ def execute_trade(api_key, market_id, side, amount):
     }, api_key=api_key)
 
 
-def has_existing_position(api_key, market_slug):
+def has_existing_position(api_key, market_slug, condition_id=None, question=None):
     """Check if we already have a position on this market."""
     positions = get_positions(api_key)
-    slug_lower = market_slug.lower()
+    slug_lower = market_slug.lower() if market_slug else ""
+    q_target = question.lower() if question else ""
+    
     for pos in positions:
-        q = (pos.get("question") or pos.get("market_name") or "").lower()
         pos_slug = (pos.get("slug") or "").lower()
-        # Match by slug or by keywords from the question
-        if slug_lower in pos_slug or pos_slug in slug_lower:
-            return pos
+        pos_id = pos.get("market_id")
+        pos_q = (pos.get("question") or pos.get("market_name") or "").lower()
         
-        # Fuzzy matching removed to prevent false positives (e.g. 70k vs 74k)
-        # slug_words = [w for w in slug_lower.split("-") if len(w) > 3]
-        # if slug_words:
-        #     matches = sum(1 for w in slug_words if w in q)
-        #     if matches >= 3:
-        #         return pos
+        # 1. Match by Market ID (most reliable)
+        if condition_id and pos_id == condition_id:
+            return pos
+            
+        # 2. Match by Slug (only if non-empty)
+        if slug_lower and pos_slug:
+            if slug_lower in pos_slug or pos_slug in slug_lower:
+                return pos
+        
+        # 3. Match by Question (exact match fallback)
+        if q_target and pos_q and q_target == pos_q:
+            return pos
+            
     return None
 
 
@@ -1998,7 +2005,12 @@ def run_price_target_strategy(dry_run=True, positions_only=False,
             f"Liq: ${opp['liquidity']:,.0f}", force=True)
 
         # Check for existing position
-        existing = has_existing_position(api_key, opp["slug"])
+        existing = has_existing_position(
+            api_key, 
+            opp["slug"], 
+            condition_id=opp.get("condition_id"),
+            question=opp.get("question")
+        )
         if existing:
             log(f"    SKIP: Already have position", force=True)
             continue
