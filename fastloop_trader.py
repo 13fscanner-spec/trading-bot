@@ -2025,7 +2025,8 @@ def run_price_target_strategy(dry_run=True, positions_only=False,
         price = opp["yes_price"] if opp["side"] == "yes" else (1 - opp["yes_price"])
 
         if price > 0:
-            min_cost = MIN_SHARES_PER_ORDER * price
+            # Add 0.05 shares buffer to ensure we hit the 5-share floor despite rounding/price shifts
+            min_cost = (MIN_SHARES_PER_ORDER + 0.05) * price
             if min_cost > position_size:
                 # If we can afford to hit the minimum shares within our max position limit, round up
                 if min_cost <= MAX_POSITION_USD:
