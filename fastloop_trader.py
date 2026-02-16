@@ -1304,11 +1304,13 @@ def has_existing_position(api_key, market_slug):
         # Match by slug or by keywords from the question
         if slug_lower in pos_slug or pos_slug in slug_lower:
             return pos
-        slug_words = [w for w in slug_lower.split("-") if len(w) > 3]
-        if slug_words:
-            matches = sum(1 for w in slug_words if w in q)
-            if matches >= 3:
-                return pos
+        
+        # Fuzzy matching removed to prevent false positives (e.g. 70k vs 74k)
+        # slug_words = [w for w in slug_lower.split("-") if len(w) > 3]
+        # if slug_words:
+        #     matches = sum(1 for w in slug_words if w in q)
+        #     if matches >= 3:
+        #         return pos
     return None
 
 
