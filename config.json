@@ -1,11 +1,9 @@
 {
-  "entry_threshold": 0.05,
-  "min_momentum_pct": 0.3,
+  "assets": "BTC,ETH,SOL",
+  "min_divergence_pct": 10,
   "max_position": 5.0,
-  "lookback_minutes": 5,
-  "min_time_remaining": 60,
-  "asset": "BTC",
-  "window": "5m",
+  "max_daily_trades": 3,
+  "min_liquidity": 500,
   "signal_source": "binance",
-  "volume_confidence": true
+  "volatility_hours": 24
 }
