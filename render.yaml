@@ -1,0 +1,12 @@
+services:
+  - type: cron
+    name: polymarket-fastloop
+    runtime: python
+    schedule: "*/5 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python fastloop_trader.py --live --quiet
+    envVars:
+      - key: SIMMER_API_KEY
+        sync: false
+      - key: PYTHONIOENCODING
+        value: utf-8
