@@ -70,6 +70,7 @@ TRADE_SOURCE = "sdk:fastloop"
 SMART_SIZING_PCT = 0.05  # 5% of balance per trade
 MIN_SHARES_PER_ORDER = 5  # Polymarket minimum
 MAX_TIME_REMAINING = 900  # 15 minutes — don't trade markets expiring later than this
+MIN_SIGNAL_SCORE = 50  # Minimum composite signal score (0-100) to trade
 
 # Asset → Binance symbol mapping
 ASSET_SYMBOLS = {
@@ -338,6 +339,7 @@ def get_binance_momentum(symbol="BTCUSDT", lookback_minutes=5):
             "latest_volume": latest_volume,
             "volume_ratio": volume_ratio,
             "candles": len(candles),
+            "candles_raw": candles,  # raw data for multi-signal analysis
         }
     except (IndexError, ValueError, KeyError):
         return None
@@ -464,6 +466,146 @@ def calculate_position_size(api_key, max_size, smart_sizing=False):
 
 
 # =============================================================================
+# Multi-Signal Analysis
+# =============================================================================
+
+def analyze_candles(candles_raw):
+    """Analyze candle data for multiple technical signals beyond simple momentum."""
+    if not candles_raw or len(candles_raw) < 2:
+        return None
+
+    closes = [float(c[4]) for c in candles_raw]
+    opens = [float(c[1]) for c in candles_raw]
+    volumes = [float(c[5]) for c in candles_raw]
+
+    overall_direction = "up" if closes[-1] > opens[0] else "down"
+
+    # 1. Trend consistency: how many candles moved in the signal direction?
+    direction_matches = 0
+    for i in range(len(candles_raw)):
+        candle_up = closes[i] > opens[i]
+        if (overall_direction == "up" and candle_up) or (overall_direction == "down" and not candle_up):
+            direction_matches += 1
+    consistency = direction_matches / len(candles_raw)
+
+    # 2. Acceleration: is the move getting stronger in the second half?
+    mid = len(closes) // 2
+    if mid == 0:
+        mid = 1
+    first_half_move = abs(closes[mid] - opens[0]) / opens[0] * 100 if opens[0] > 0 else 0
+    second_half_move = abs(closes[-1] - closes[mid]) / closes[mid] * 100 if closes[mid] > 0 else 0
+    acceleration = second_half_move / first_half_move if first_half_move > 0 else 1.0
+
+    # 3. Volume trend: is volume increasing with the move?
+    first_half_vol = sum(volumes[:mid]) / max(mid, 1)
+    second_half_vol = sum(volumes[mid:]) / max(len(volumes) - mid, 1)
+    volume_trend = second_half_vol / first_half_vol if first_half_vol > 0 else 1.0
+
+    # 4. Consecutive candles: longest streak in signal direction
+    streak = 0
+    max_streak = 0
+    for i in range(len(candles_raw)):
+        candle_up = closes[i] > opens[i]
+        if (overall_direction == "up" and candle_up) or (overall_direction == "down" and not candle_up):
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+
+    return {
+        "consistency": consistency,
+        "acceleration": min(acceleration, 5.0),  # cap at 5x
+        "volume_trend": min(volume_trend, 5.0),
+        "max_streak": max_streak,
+        "total_candles": len(candles_raw),
+    }
+
+
+def calculate_signal_score(momentum_data, candle_analysis):
+    """Calculate composite signal score (0-100).
+    Combines momentum, volume, trend consistency, acceleration, and volume trend.
+    Higher score = stronger, more reliable signal."""
+
+    score = 0
+    breakdown = {}
+
+    # 1. Momentum strength (0-30 points)
+    # 0.5% = 10pts, 1.0% = 20pts, 1.5%+ = 30pts
+    mom_abs = abs(momentum_data["momentum_pct"])
+    mom_score = min(30, mom_abs / 1.5 * 30)
+    breakdown["momentum"] = round(mom_score, 1)
+    score += mom_score
+
+    # 2. Volume confirmation (0-25 points)
+    vol_ratio = momentum_data["volume_ratio"]
+    if vol_ratio >= 2.0:
+        vol_score = 25
+    elif vol_ratio >= 1.5:
+        vol_score = 20
+    elif vol_ratio >= 1.0:
+        vol_score = 15
+    elif vol_ratio >= 0.5:
+        vol_score = 5
+    else:
+        vol_score = 0
+    breakdown["volume"] = vol_score
+    score += vol_score
+
+    if candle_analysis:
+        # 3. Trend consistency (0-20 points)
+        cons = candle_analysis["consistency"]
+        cons_score = cons * 20
+        breakdown["consistency"] = round(cons_score, 1)
+        score += cons_score
+
+        # 4. Acceleration (0-15 points)
+        accel = candle_analysis["acceleration"]
+        if accel >= 1.5:
+            accel_score = 15
+        elif accel >= 1.0:
+            accel_score = 10
+        elif accel >= 0.5:
+            accel_score = 5
+        else:
+            accel_score = 0
+        breakdown["acceleration"] = accel_score
+        score += accel_score
+
+        # 5. Volume trend (0-10 points)
+        vt = candle_analysis["volume_trend"]
+        if vt >= 1.5:
+            vt_score = 10
+        elif vt >= 1.0:
+            vt_score = 7
+        elif vt >= 0.5:
+            vt_score = 3
+        else:
+            vt_score = 0
+        breakdown["vol_trend"] = vt_score
+        score += vt_score
+
+    return round(score, 1), breakdown
+
+
+def has_existing_position(api_key, market_slug):
+    """Check if we already have a position in this market to avoid duplicates."""
+    positions = get_positions(api_key)
+    for pos in positions:
+        question = (pos.get("question") or "").lower()
+        # Match by checking if the market question overlaps with our target
+        shares_yes = pos.get("shares_yes", 0) or 0
+        shares_no = pos.get("shares_no", 0) or 0
+        if (shares_yes > 0 or shares_no > 0):
+            # Check if this position matches the market we want to trade
+            slug_parts = market_slug.lower().replace("-", " ").split()
+            # Match key terms from slug in the question
+            matches = sum(1 for part in slug_parts if part in question)
+            if matches >= 3:  # At least 3 slug words match
+                return pos
+    return None
+
+
+# =============================================================================
 # Main Strategy Logic
 # =============================================================================
 
@@ -576,8 +718,18 @@ def run_fast_market_strategy(dry_run=True, positions_only=False, show_config=Fal
     if VOLUME_CONFIDENCE:
         log(f"  Volume ratio: {momentum['volume_ratio']:.2f}x avg")
 
-    # Step 4: Decision logic
-    log(f"\n🧠 Analyzing...")
+    # Step 3.5: Check for existing position (avoid duplicates)
+    existing = has_existing_position(api_key, best["slug"])
+    if existing:
+        ex_yes = existing.get('shares_yes', 0) or 0
+        ex_no = existing.get('shares_no', 0) or 0
+        log(f"  ⚠️  Already have position: YES {ex_yes:.1f} / NO {ex_no:.1f} shares — skip")
+        if not quiet:
+            print(f"📊 Summary: No trade (duplicate position)")
+        return
+
+    # Step 4: Decision logic with multi-signal scoring
+    log(f"\n🧠 Analyzing (multi-signal)...")
 
     momentum_pct = abs(momentum["momentum_pct"])
     direction = momentum["direction"]
@@ -589,8 +741,22 @@ def run_fast_market_strategy(dry_run=True, positions_only=False, show_config=Fal
             print(f"📊 Summary: No trade (momentum too weak: {momentum_pct:.3f}%)")
         return
 
+    # Multi-signal analysis
+    candle_analysis = analyze_candles(momentum.get("candles_raw"))
+    signal_score, score_breakdown = calculate_signal_score(momentum, candle_analysis)
+
+    log(f"  Signal score: {signal_score}/100 (min: {MIN_SIGNAL_SCORE})")
+    log(f"  Breakdown: {score_breakdown}")
+    if candle_analysis:
+        log(f"  Consistency: {candle_analysis['consistency']:.0%} | Acceleration: {candle_analysis['acceleration']:.1f}x")
+
+    if signal_score < MIN_SIGNAL_SCORE:
+        log(f"  ⏸️  Signal score {signal_score} < minimum {MIN_SIGNAL_SCORE} — skip")
+        if not quiet:
+            print(f"📊 Summary: No trade (signal too weak: {signal_score}/100)")
+        return
+
     # Calculate expected fair price based on momentum direction
-    # Simple model: strong momentum → higher probability of continuation
     if direction == "up":
         side = "yes"
         divergence = 0.50 + ENTRY_THRESHOLD - market_yes_price
@@ -622,16 +788,16 @@ def run_fast_market_strategy(dry_run=True, positions_only=False, show_config=Fal
         buy_price = market_yes_price if side == "yes" else (1 - market_yes_price)
         win_profit = (1 - buy_price) * (1 - fee_rate)
         breakeven = buy_price / (win_profit + buy_price)
-        fee_penalty = breakeven - 0.50  # how much fees shift breakeven above 50%
-        min_divergence = fee_penalty + 0.02  # plus buffer
-        log(f"  Breakeven:        {breakeven:.1%} win rate (fee-adjusted, min divergence {min_divergence:.3f})")
+        fee_penalty = breakeven - 0.50
+        min_divergence = fee_penalty + 0.02
+        log(f"  Breakeven:        {breakeven:.1%} win rate (fee-adjusted)")
         if divergence < min_divergence:
             log(f"  ⏸️  Divergence {divergence:.3f} < fee-adjusted minimum {min_divergence:.3f} — skip")
             if not quiet:
                 print(f"📊 Summary: No trade (fees eat the edge)")
             return
 
-    # We have a signal!
+    # We have a strong multi-signal confirmation!
     position_size = calculate_position_size(api_key, MAX_POSITION_USD, smart_sizing)
     price = market_yes_price if side == "yes" else (1 - market_yes_price)
 
@@ -643,7 +809,7 @@ def run_fast_market_strategy(dry_run=True, positions_only=False, show_config=Fal
             return
 
     log(f"  ✅ Signal: {side.upper()} — {trade_rationale}{vol_note}", force=True)
-    log(f"  Divergence: {divergence:.3f}", force=True)
+    log(f"  📊 Score: {signal_score}/100 | Divergence: {divergence:.3f}", force=True)
 
     # Step 5: Import & Trade
     log(f"\n🔗 Importing to Simmer...", force=True)
