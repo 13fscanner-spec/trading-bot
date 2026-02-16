@@ -1995,11 +1995,11 @@ def run_price_target_strategy(dry_run=True, positions_only=False,
         log(f"    Regime: {opp['regime']} | Slip: {opp['slippage_pct']:.1%} | "
             f"Liq: ${opp['liquidity']:,.0f}", force=True)
 
-        # Check for existing position
-        existing = has_existing_position(api_key, opp["slug"])
-        if existing:
-            log(f"    SKIP: Already have position", force=True)
-            continue
+        # Existing position check disabled — allow accumulation
+        # existing = has_existing_position(api_key, opp["slug"])
+        # if existing:
+        #     log(f"    SKIP: Already have position", force=True)
+        #     continue
 
         # Position sizing: Kelly or fixed
         if smart_sizing and opp["kelly_size"] > 0:
