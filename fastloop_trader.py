@@ -69,6 +69,7 @@ CONFIG_SCHEMA = {
 TRADE_SOURCE = "sdk:fastloop"
 SMART_SIZING_PCT = 0.05  # 5% of balance per trade
 MIN_SHARES_PER_ORDER = 5  # Polymarket minimum
+MAX_TIME_REMAINING = 900  # 15 minutes — don't trade markets expiring later than this
 
 # Asset → Binance symbol mapping
 ASSET_SYMBOLS = {
@@ -166,7 +167,7 @@ def get_api_key():
     return key
 
 
-def _api_request(url, method="GET", data=None, headers=None, timeout=15):
+def _api_request(url, method="GET", data=None, headers=None, timeout=30):
     """Make an HTTP request. Returns parsed JSON or None on error."""
     try:
         req_headers = headers or {}
@@ -262,7 +263,8 @@ def _parse_fast_market_end_time(question):
 
 
 def find_best_fast_market(markets):
-    """Pick the best fast_market to trade: soonest expiring with enough time remaining."""
+    """Pick the best fast_market to trade: soonest expiring with enough time remaining.
+    Only considers markets expiring within MAX_TIME_REMAINING (15 min) so momentum is relevant."""
     now = datetime.now(timezone.utc)
     candidates = []
     for m in markets:
@@ -270,7 +272,7 @@ def find_best_fast_market(markets):
         if not end_time:
             continue
         remaining = (end_time - now).total_seconds()
-        if remaining > MIN_TIME_REMAINING:
+        if remaining > MIN_TIME_REMAINING and remaining < MAX_TIME_REMAINING:
             candidates.append((remaining, m))
 
     if not candidates:
