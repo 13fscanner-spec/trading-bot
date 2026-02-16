@@ -286,14 +286,27 @@ def find_best_fast_market(markets):
 
 def get_binance_momentum(symbol="BTCUSDT", lookback_minutes=5):
     """Get price momentum from Binance public API.
+    Tries multiple endpoints to work around geo-restrictions (US servers blocked).
     Returns: {momentum_pct, direction, price_now, price_then, avg_volume, candles}
     """
-    url = (
-        f"https://api.binance.com/api/v3/klines"
-        f"?symbol={symbol}&interval=1m&limit={lookback_minutes}"
-    )
-    result = _api_request(url)
-    if not result or isinstance(result, dict):
+    # Try multiple Binance endpoints (some are geo-blocked from US servers)
+    binance_hosts = [
+        "https://api.binance.com",
+        "https://data-api.binance.vision",
+        "https://api1.binance.com",
+        "https://api2.binance.com",
+        "https://api3.binance.com",
+    ]
+
+    result = None
+    for host in binance_hosts:
+        url = f"{host}/api/v3/klines?symbol={symbol}&interval=1m&limit={lookback_minutes}"
+        result = _api_request(url)
+        if result and not isinstance(result, dict):
+            break  # Got valid candle data
+        result = None
+
+    if not result:
         return None
 
     try:
