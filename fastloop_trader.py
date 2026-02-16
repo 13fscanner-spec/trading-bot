@@ -1062,13 +1062,13 @@ def estimate_bracket_probability(current_price, bracket_low, bracket_high,
     # Higher kurtosis → use fatter-tailed distribution
     # Adaptive df: more kurtosis = lower df = fatter tails
     if kurtosis > 6:
-        df = 3   # very fat tails
+        df = 5   # was 3 (very fat) -> now moderate
     elif kurtosis > 3:
-        df = 5   # moderate fat tails (default for crypto)
+        df = 8   # was 5 -> now mild
     elif kurtosis > 1:
-        df = 7   # mild fat tails
+        df = 12  # was 7 -> now close to normal
     else:
-        df = 10  # close to normal
+        df = 30  # was 10 -> now effectively Normal distribution
 
     # Scale factor for Student-t to match volatility
     # Student-t variance = df/(df-2) * scale², so scale = vol * sqrt((df-2)/df)
@@ -1161,7 +1161,11 @@ def calculate_kelly_size(balance, kelly_fraction, max_position, min_bet=1.0):
     size = max(size, 0)
 
     if size < min_bet:
-        return 0  # Don't bet if Kelly says too small
+        # If the size is small but positive (> $0.10), round up to min_bet
+        # to ensure the order is accepted by Polymarket
+        if size > 0.10:
+            return min_bet
+        return 0  # Still too risky/small
 
     return round(size, 2)
 
@@ -1319,6 +1323,9 @@ def calculate_position_size(api_key, max_size, smart_sizing=False):
     if balance <= 0:
         return max_size
     smart_size = balance * SMART_SIZING_PCT
+    # Clamp to at least $1.00 if balance permits
+    if smart_size < 1.0 and balance >= 1.0:
+        smart_size = 1.0
     return min(smart_size, max_size)
 
 
