@@ -82,7 +82,7 @@ CONFIG_SCHEMA = {
 
 TRADE_SOURCE = "sdk:price_target"
 SMART_SIZING_PCT = 0.05
-MIN_SHARES_PER_ORDER = 1
+MIN_SHARES_PER_ORDER = 5
 
 # Asset -> Binance symbol mapping
 ASSET_SYMBOLS = {
@@ -2015,8 +2015,13 @@ def run_price_target_strategy(dry_run=True, positions_only=False,
         if price > 0:
             min_cost = MIN_SHARES_PER_ORDER * price
             if min_cost > position_size:
-                log(f"    SKIP: Position too small (${position_size:.2f} < min ${min_cost:.2f})")
-                continue
+                # If we can afford to hit the minimum shares within our max position limit, round up
+                if min_cost <= MAX_POSITION_USD:
+                    log(f"    Rounding up to meet minimum shares: ${min_cost:.2f}", force=True)
+                    position_size = min_cost
+                else:
+                    log(f"    SKIP: Position too small (${position_size:.2f} < min ${min_cost:.2f})")
+                    continue
 
         # Import & Trade
         import_slug = opp.get("event_slug") or opp["slug"]
