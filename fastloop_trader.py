@@ -48,7 +48,7 @@ except ImportError:
 CONFIG_SCHEMA = {
     "entry_threshold": {"default": 0.05, "env": "SIMMER_SPRINT_ENTRY", "type": float,
                         "help": "Min price divergence from 50¢ to trigger trade"},
-    "min_momentum_pct": {"default": 0.5, "env": "SIMMER_SPRINT_MOMENTUM", "type": float,
+    "min_momentum_pct": {"default": 0.3, "env": "SIMMER_SPRINT_MOMENTUM", "type": float,
                          "help": "Min BTC % move in lookback window to trigger"},
     "max_position": {"default": 5.0, "env": "SIMMER_SPRINT_MAX_POSITION", "type": float,
                      "help": "Max $ per trade"},
@@ -69,8 +69,8 @@ CONFIG_SCHEMA = {
 TRADE_SOURCE = "sdk:fastloop"
 SMART_SIZING_PCT = 0.05  # 5% of balance per trade
 MIN_SHARES_PER_ORDER = 5  # Polymarket minimum
-MAX_TIME_REMAINING = 900  # 15 minutes — don't trade markets expiring later than this
-MIN_SIGNAL_SCORE = 50  # Minimum composite signal score (0-100) to trade
+MAX_TIME_REMAINING = 1800  # 30 minutes — don't trade markets expiring later than this
+MIN_SIGNAL_SCORE = 45  # Minimum composite signal score (0-100) to trade
 
 # Asset → Binance symbol mapping
 ASSET_SYMBOLS = {
