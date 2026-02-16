@@ -82,7 +82,7 @@ CONFIG_SCHEMA = {
 
 TRADE_SOURCE = "sdk:price_target"
 SMART_SIZING_PCT = 0.05
-MIN_SHARES_PER_ORDER = 5
+MIN_SHARES_PER_ORDER = 1
 
 # Asset -> Binance symbol mapping
 ASSET_SYMBOLS = {
