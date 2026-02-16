@@ -2,7 +2,11 @@ import os
 from fastloop_trader import send_trade_alert
 
 # Set the webhook URL provided by the user
-os.environ["TRADE_ALERT_WEBHOOK"] = "https://api.telegram.org/bot8228510569:AAFK1fjPCWSvWgGzHHGbqpWbtdTWJdedzwc/sendMessage?chat_id=6952205125"
+webhook = os.environ.get("TRADE_ALERT_WEBHOOK")
+if not webhook:
+    print("❌ Error: TRADE_ALERT_WEBHOOK environment variable not set.")
+    print("Usage: $env:TRADE_ALERT_WEBHOOK='your_url'; python test_alert.py")
+    exit(1)
 
 print("Sending test alert to Telegram...")
 
